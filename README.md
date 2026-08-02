@@ -73,6 +73,29 @@ The baseline (start-of-month equity) is persisted to `state_path` as JSON so
 it survives process restarts, and rolls over automatically at the start of
 each calendar month.
 
+### Robinhood adapter
+
+`nando/robinhood_adapter.py` wires the guard into Robinhood's Agentic
+Trading MCP (`https://agent.robinhood.com/mcp/trading`):
+
+```python
+from nando.robinhood_adapter import build_guardrail
+
+# `session` is an already-authenticated MCP client session connected to
+# the Robinhood trading server (complete OAuth first, e.g. via
+# `claude mcp login trading`).
+guardrail = build_guardrail(session, state_path="state/drawdown.json")
+guardrail.place_order_if_allowed("AAPL", 10)
+```
+
+**Unverified:** this adapter is written against the tool names and response
+shapes publicly reported for Robinhood's MCP server (`get_portfolio`
+returning an `equity` field, `place_equity_order` taking
+symbol/quantity/side) - it has not been checked against the live tool
+schema, since doing so requires completing Robinhood's OAuth flow. Confirm
+the real schema once authenticated and adjust `robinhood_adapter.py` if
+anything doesn't match.
+
 Run the tests with:
 
 ```bash
