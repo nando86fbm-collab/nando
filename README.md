@@ -34,3 +34,48 @@ MCP is an open protocol supported across a wide range of clients and servers. AI
 ## Learn more
 
 - **Understand concepts** — Learn the core concepts and architecture of MCP.
+
+# nando
+
+## Monthly drawdown guard
+
+`nando/drawdown_guard.py` implements a capital-preservation rule: trading
+halts once account equity falls 10% or more below the equity recorded at the
+start of the current calendar month.
+
+```python
+from nando.drawdown_guard import MonthlyDrawdownGuard, TradingGuardrail
+
+guard = MonthlyDrawdownGuard("state/drawdown.json", limit_pct=0.10)
+
+# Call once per equity update (e.g. before every trade decision).
+# Raises DrawdownLimitBreached if the monthly loss limit has been hit.
+guard.guard(current_equity)
+```
+
+`TradingGuardrail` wraps a trade-execution callable so orders are refused
+once the limit is breached:
+
+```python
+guardrail = TradingGuardrail(
+    guard=guard,
+    get_equity=my_broker.get_account_equity,
+    place_order=my_broker.place_order,
+)
+guardrail.place_order_if_allowed("AAPL", 10)
+```
+
+The guard has no dependency on any specific broker - `get_equity` and
+`place_order` are adapters you provide, e.g. thin wrappers around a
+connected trading MCP server's tools.
+
+The baseline (start-of-month equity) is persisted to `state_path` as JSON so
+it survives process restarts, and rolls over automatically at the start of
+each calendar month.
+
+Run the tests with:
+
+```bash
+pip install pytest
+python3 -m pytest
+```
