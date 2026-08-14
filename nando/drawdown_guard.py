@@ -13,6 +13,34 @@ from pathlib import Path
 from typing import Callable, Optional
 
 
+@dataclass(frozen=True)
+class DrawdownStatus:
+    """A point-in-time snapshot of where equity stands against the monthly
+    drawdown limit, e.g. for a pre-market status report."""
+
+    month: str
+    baseline_equity: float
+    current_equity: float
+    drawdown_pct: float
+    limit_pct: float
+    breached: bool
+
+    @property
+    def headroom_pct(self) -> float:
+        """Remaining cushion before the limit, as a positive fraction (e.g.
+        0.03 means equity can fall another 3% before trading halts). Negative
+        once breached."""
+        return self.limit_pct + self.drawdown_pct
+
+    def __str__(self) -> str:
+        state = "HALTED" if self.breached else "OK"
+        return (
+            f"[{state}] {self.month}: equity {self.current_equity:,.2f} vs "
+            f"baseline {self.baseline_equity:,.2f} ({self.drawdown_pct:+.2%}), "
+            f"limit -{self.limit_pct:.0%}, headroom {self.headroom_pct:+.2%}"
+        )
+
+
 class DrawdownLimitBreached(Exception):
     """Raised when an action is blocked by the monthly drawdown limit."""
 
@@ -77,6 +105,20 @@ class MonthlyDrawdownGuard:
 
     def is_breached(self, equity: float, when: Optional[datetime] = None) -> bool:
         return self.evaluate(equity, when) <= -self.limit_pct
+
+    def status(self, equity: float, when: Optional[datetime] = None) -> DrawdownStatus:
+        """Return a full snapshot of drawdown state for reporting (e.g. a
+        pre-market check), without raising even if the limit is breached."""
+        when = when or datetime.now(timezone.utc)
+        drawdown = self.evaluate(equity, when)
+        return DrawdownStatus(
+            month=self._month_key(when),
+            baseline_equity=self._state["start_equity"],
+            current_equity=equity,
+            drawdown_pct=drawdown,
+            limit_pct=self.limit_pct,
+            breached=drawdown <= -self.limit_pct,
+        )
 
     def guard(self, equity: float, when: Optional[datetime] = None) -> None:
         """Raise DrawdownLimitBreached if this month's loss limit has been hit."""
