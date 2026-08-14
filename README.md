@@ -76,25 +76,33 @@ each calendar month.
 ### Robinhood adapter
 
 `nando/robinhood_adapter.py` wires the guard into Robinhood's Agentic
-Trading MCP (`https://agent.robinhood.com/mcp/trading`):
+Trading MCP (`https://agent.robinhood.com/mcp/trading`), verified against
+the live tool schema:
 
 ```python
-from nando.robinhood_adapter import build_guardrail
+from nando.drawdown_guard import MonthlyDrawdownGuard, TradingGuardrail
+from nando.robinhood_adapter import RobinhoodAdapter
 
 # `session` is an already-authenticated MCP client session connected to
-# the Robinhood trading server (complete OAuth first, e.g. via
-# `claude mcp login trading`).
-guardrail = build_guardrail(session, state_path="state/drawdown.json")
-guardrail.place_order_if_allowed("AAPL", 10)
+# the Robinhood trading server. `account_number` must be an
+# agentic_allowed=true account (from get_accounts) - Robinhood rejects
+# orders against the main brokerage account.
+adapter = RobinhoodAdapter(session, account_number="...")
+guard = MonthlyDrawdownGuard("state/drawdown.json")
+guardrail = TradingGuardrail(guard=guard, get_equity=adapter.get_equity, place_order=adapter.place_order)
+
+# Real money: review first, then only pass confirm=True once the user has
+# seen the estimated cost/alerts and explicitly agreed.
+adapter.review_order("AAPL", side="buy", type="market", quantity=10)
+guardrail.place_order_if_allowed("AAPL", side="buy", type="market", quantity=10, confirm=True)
 ```
 
-**Unverified:** this adapter is written against the tool names and response
-shapes publicly reported for Robinhood's MCP server (`get_portfolio`
-returning an `equity` field, `place_equity_order` taking
-symbol/quantity/side) - it has not been checked against the live tool
-schema, since doing so requires completing Robinhood's OAuth flow. Confirm
-the real schema once authenticated and adjust `robinhood_adapter.py` if
-anything doesn't match.
+`place_order` raises `OrderNotConfirmed` unless called with `confirm=True` -
+this mirrors Robinhood's own tool contract, which expects `review_equity_order`
+to run first and the order to be explicitly confirmed before
+`place_equity_order` executes with real money. The monthly drawdown check
+and the per-order confirmation gate are independent safeguards: both must
+pass for an order to go through.
 
 Run the tests with:
 
