@@ -4,6 +4,7 @@ import pytest
 
 from nando.drawdown_guard import (
     DrawdownLimitBreached,
+    DrawdownStatus,
     MonthlyDrawdownGuard,
     TradingGuardrail,
 )
@@ -95,6 +96,44 @@ def test_rejects_invalid_limit_pct(tmp_path):
         MonthlyDrawdownGuard(tmp_path / "state.json", limit_pct=1.5)
     with pytest.raises(ValueError):
         MonthlyDrawdownGuard(tmp_path / "state.json", limit_pct=0)
+
+
+def test_status_reports_ok_when_within_limit(tmp_path):
+    guard = make_guard(tmp_path)
+    when = datetime(2026, 5, 1, tzinfo=timezone.utc)
+    guard.evaluate(10_000, when=when)
+
+    status = guard.status(9_500, when=when)
+    assert status == DrawdownStatus(
+        month="2026-05",
+        baseline_equity=10_000,
+        current_equity=9_500,
+        drawdown_pct=pytest.approx(-0.05),
+        limit_pct=0.10,
+        breached=False,
+    )
+    assert status.headroom_pct == pytest.approx(0.05)
+    assert not status.breached
+
+
+def test_status_reports_breached_without_raising(tmp_path):
+    guard = make_guard(tmp_path)
+    when = datetime(2026, 5, 1, tzinfo=timezone.utc)
+    guard.evaluate(10_000, when=when)
+
+    status = guard.status(8_500, when=when)  # -15%, past the 10% limit
+    assert status.breached
+    assert status.drawdown_pct == pytest.approx(-0.15)
+    assert status.headroom_pct == pytest.approx(-0.05)
+    assert "HALTED" in str(status)
+
+
+def test_status_establishes_baseline_like_evaluate(tmp_path):
+    guard = make_guard(tmp_path)
+    status = guard.status(10_000)
+    assert status.baseline_equity == 10_000
+    assert status.drawdown_pct == 0.0
+    assert not status.breached
 
 
 def test_trading_guardrail_blocks_order_past_limit(tmp_path):

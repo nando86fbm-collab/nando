@@ -104,6 +104,32 @@ to run first and the order to be explicitly confirmed before
 and the per-order confirmation gate are independent safeguards: both must
 pass for an order to go through.
 
+### Pre-market status check
+
+`nando/premarket_check.py` provides a read-only report of drawdown status -
+useful for a pre-market routine that just wants to see where things stand
+before any trading decision is made. Unlike `guard.guard()`, it never
+raises on a breach; it just returns a `DrawdownStatus` snapshot.
+
+```python
+from nando.drawdown_guard import MonthlyDrawdownGuard
+from nando.premarket_check import premarket_check
+from nando.robinhood_adapter import RobinhoodAdapter
+
+adapter = RobinhoodAdapter(session, account_number="...")
+guard = MonthlyDrawdownGuard("state/drawdown.json")
+
+status = premarket_check(guard, adapter.get_equity)
+print(status)
+# [OK] 2026-08: equity 9,500.00 vs baseline 10,000.00 (-5.00%), limit -10%, headroom +5.00%
+
+if status.breached:
+    ...  # skip today's trading routine, alert, etc.
+```
+
+`MonthlyDrawdownGuard.status(equity)` returns the same `DrawdownStatus` and
+can be called directly if you already have equity on hand.
+
 Run the tests with:
 
 ```bash
